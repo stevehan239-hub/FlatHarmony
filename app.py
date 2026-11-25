@@ -1,8 +1,10 @@
 import streamlit as st
 import io
 import csv
-import os
 
+# ==========================================
+# 1. Page Config & Session State Initialization
+# ==========================================
 st.set_page_config(page_title="FlatHarmony V1", page_icon="💸", layout="wide")
 
 if 'users' not in st.session_state:
@@ -14,8 +16,11 @@ if 'draft_items' not in st.session_state:
 if 'receipts' not in st.session_state:
     st.session_state.receipts = []
 if 'settlements' not in st.session_state:
-    st.session_state.settlements = []  
+    st.session_state.settlements = []
 
+# ==========================================
+# 2. Sidebar: User Switcher
+# ==========================================
 st.sidebar.title("👥 Switch User")
 current_idx = st.session_state.users.index(st.session_state.current_user)
 selected_user = st.sidebar.radio("Active User:", st.session_state.users, index=current_idx)
@@ -29,6 +34,9 @@ st.divider()
 
 col1, col2 = st.columns([1, 1.2], gap="large")
 
+# ==========================================
+# 3. Left Column: Add New Receipt
+# ==========================================
 with col1:
     st.header("🧾 Add New Receipt")
     
@@ -42,8 +50,8 @@ with col1:
         
         if submitted and i_name and i_price > 0:
             st.session_state.draft_items.append({
-                "id": str(len(st.session_state.draft_items)), 
-                "name": i_name, 
+                "id": str(len(st.session_state.draft_items)),
+                "name": i_name,
                 "price": float(i_price)
             })
             st.rerun()
@@ -93,7 +101,9 @@ with col1:
             st.session_state.draft_items = []
             st.rerun()
 
-
+# ==========================================
+# 4. Right Column: Pending, Settled & Debts
+# ==========================================
 raw_owes = {u: {v: 0.0 for v in st.session_state.users} for u in st.session_state.users}
 net_owes = {u: {v: 0.0 for v in st.session_state.users} for u in st.session_state.users}
 
@@ -148,16 +158,17 @@ with col2:
                     if u != r['payer']:
                         raw_owes[u][r['payer']] += user_total
 
+    # Subtract already marked-as-paid settlements
     for u in st.session_state.users:
         for v in st.session_state.users:
             if u != v:
                 total_owed = raw_owes[u][v]
                 total_paid = sum(s['amount'] for s in st.session_state.settlements if s['debtor'] == u and s['creditor'] == v)
-                
                 diff = total_owed - total_paid
                 if diff > 0.001:
                     net_owes[u][v] = diff
 
+    # Bilateral debt cancellation
     for u in st.session_state.users:
         for v in st.session_state.users:
             if net_owes[u][v] > 0 and net_owes[v][u] > 0:
@@ -168,8 +179,8 @@ with col2:
                     net_owes[v][u] -= net_owes[u][v]
                     net_owes[u][v] = 0
 
+    # Personal Accounts Section
     st.subheader("💳 Personal Accounts (Who Owes Whom)")
-    
     for user in st.session_state.users:
         with st.expander(f"👤 {user}'s Account", expanded=(user == st.session_state.current_user)):
             st.markdown(f"**Ledger for {user}:**")
@@ -197,6 +208,7 @@ with col2:
             if not has_record:
                 st.write("All clear! No debts or receivables.")
 
+    # CSV Export & Persistence
     st.divider()
     st.subheader("💾 Data & History")
     
@@ -225,11 +237,13 @@ with col2:
     with d_col2:
         st.download_button(label="📥 Export Settlement Ledger", data=debts_csv.getvalue(), file_name="settlement_debts.csv", mime="text/csv", use_container_width=True)
 
+# ==========================================
+# 5. Real-time Local CSV Auto-Save
+# ==========================================
 try:
     with open("flatharmony_receipts.csv", "w", newline="", encoding="utf-8") as f_receipts:
         f_receipts.write(receipts_csv.getvalue())
-                
     with open("flatharmony_debts.csv", "w", newline="", encoding="utf-8") as f_debts:
         f_debts.write(debts_csv.getvalue())
-except Exception as e:
+except Exception:
     pass
