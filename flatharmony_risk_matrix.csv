@@ -1,0 +1,5 @@
+Feature / Module,Risk Description,Probability,Impact,Risk Level,Mitigation Strategy
+Financial Calculations,Floating-point precision errors when distributing uneven tax/tip amounts proportionally.,High,Critical,High,Implement strict rounding logic. Verify splits using assertion checks (sum(splits) == total).
+Data Persistence,Concurrent I/O write collisions or data corruption when updating the CSV file rapidly.,Low,High,Medium,"Use synchronous file writing locks. Trigger CSV updates only on definitive state changes (e.g., ""Settle"" click)."
+State Management,Desynchronization between the React/Streamlit UI state (checkboxes) and the backend debt dictionary.,Medium,High,Medium,Enforce one-way data binding. The UI strictly renders based on the central session_state source of truth.
+User Switching,"""Payer"" identity becomes mismatched if the user switches active profiles mid-entry.",Low,Medium,Low,Clear draft items and reset form states automatically whenever a user switch event is detected.
