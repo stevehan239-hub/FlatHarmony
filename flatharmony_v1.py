@@ -3,9 +3,6 @@ import io
 import csv
 import os
 
-# ==========================================
-# 1. Page Config & Session State Initialization
-# ==========================================
 st.set_page_config(page_title="FlatHarmony V1", page_icon="💸", layout="wide")
 
 if 'users' not in st.session_state:
@@ -17,11 +14,8 @@ if 'draft_items' not in st.session_state:
 if 'receipts' not in st.session_state:
     st.session_state.receipts = []
 if 'settlements' not in st.session_state:
-    st.session_state.settlements = []  # 记录已经手动 Check Mark 为 Paid 的还款操作
+    st.session_state.settlements = []  
 
-# ==========================================
-# 2. Sidebar: User Switcher
-# ==========================================
 st.sidebar.title("👥 Switch User")
 current_idx = st.session_state.users.index(st.session_state.current_user)
 selected_user = st.sidebar.radio("Active User:", st.session_state.users, index=current_idx)
@@ -35,9 +29,6 @@ st.divider()
 
 col1, col2 = st.columns([1, 1.2], gap="large")
 
-# ==========================================
-# 3. Left Column: Add New Receipt
-# ==========================================
 with col1:
     st.header("🧾 Add New Receipt")
     
@@ -77,7 +68,6 @@ with col1:
         tip_mode = st.radio("Tip Entry Mode", ["By Percentage (%)", "By Amount ($)"], horizontal=True)
         if tip_mode == "By Percentage (%)":
             tip_pct = st.number_input("Tip Percentage (%)", min_value=0.0, step=1.0, value=0.0)
-            # Fix: 确保浮点数计算逻辑，精确按照 Subtotal 计算小费总额
             final_tip = float(subtotal) * (float(tip_pct) / 100.0)
             st.caption(f"Calculated Tip Amount: ${final_tip:.2f}")
         else:
@@ -103,11 +93,6 @@ with col1:
             st.session_state.draft_items = []
             st.rerun()
 
-# ==========================================
-# 4. Right Column: Pending, Settled & Debts
-# ==========================================
-
-# 初始化债务矩阵
 raw_owes = {u: {v: 0.0 for v in st.session_state.users} for u in st.session_state.users}
 net_owes = {u: {v: 0.0 for v in st.session_state.users} for u in st.session_state.users}
 
@@ -144,7 +129,6 @@ with col2:
     st.header("🧮 Settlement Results")
     settled_receipts = [r for r in st.session_state.receipts if r['status'] == 'settled']
     
-    # 计算原始债务 (基于所有 settled 小票的按比例分摊)
     for r in settled_receipts:
         user_subtotals = {u: 0.0 for u in st.session_state.users}
         for item in r['items']:
@@ -159,12 +143,10 @@ with col2:
             for u in st.session_state.users:
                 if user_subtotals[u] > 0:
                     proportion = user_subtotals[u] / claimed_subtotal
-                    # 按照各人认领的金额比例，精确分摊 Tax 和 Tip
                     user_total = user_subtotals[u] + (r['tax'] * proportion) + (r['tip'] * proportion)
                     if u != r['payer']:
                         raw_owes[u][r['payer']] += user_total
 
-    # 计算抵消 (手动标记已付的记录将从总欠款中减去)
     for u in st.session_state.users:
         for v in st.session_state.users:
             if u != v:
@@ -172,11 +154,9 @@ with col2:
                 total_paid = sum(s['amount'] for s in st.session_state.settlements if s['debtor'] == u and s['creditor'] == v)
                 
                 diff = total_owed - total_paid
-                # 相互抵消 A欠B 和 B欠A 的债务，求净值
                 if diff > 0.001:
                     net_owes[u][v] = diff
 
-    # 简化：抵消双向债务 (如果A欠B 10，B欠A 5，简化为A欠B 5)
     for u in st.session_state.users:
         for v in st.session_state.users:
             if net_owes[u][v] > 0 and net_owes[v][u] > 0:
@@ -187,23 +167,18 @@ with col2:
                     net_owes[v][u] -= net_owes[u][v]
                     net_owes[u][v] = 0
 
-    # ---------------- 个人账户债务展示区 ----------------
     st.subheader("💳 Personal Accounts (Who Owes Whom)")
     
-    # 为每个人创建独立的分类面板
     for user in st.session_state.users:
         with st.expander(f"👤 {user}'s Account", expanded=(user == st.session_state.current_user)):
             st.markdown(f"**Ledger for {user}:**")
             has_record = False
             
-            # 1. 欠别人的钱 (Payables)
             for creditor in st.session_state.users:
                 amount = net_owes[user][creditor]
                 if amount > 0.01:
                     has_record = True
-                    # 提供 Checkbox 一键标记已付
                     if st.checkbox(f"🔴 You owe {creditor}: **${amount:.2f}** (Check to mark as Paid)", key=f"pay_{user}_{creditor}_{amount}"):
-                        # 当复选框被勾选，记录已付，重载页面
                         st.session_state.settlements.append({
                             "debtor": user,
                             "creditor": creditor,
@@ -212,7 +187,6 @@ with col2:
                         })
                         st.rerun()
             
-            # 2. 别人欠你的钱 (Receivables)
             for debtor in st.session_state.users:
                 amount = net_owes[debtor][user]
                 if amount > 0.01:
@@ -222,14 +196,12 @@ with col2:
             if not has_record:
                 st.write("All clear! No debts or receivables.")
 
-    # ---------------- CSV 实时写入与导出逻辑 ----------------
     st.divider()
     st.subheader("💾 Data & History")
     
     receipts_csv = io.StringIO()
     debts_csv = io.StringIO()
     
-    # 生成 CSV: Receipts
     writer1 = csv.writer(receipts_csv)
     writer1.writerow(["Receipt_ID", "Receipt_Name", "Status", "Payer", "Item_Name", "Price", "Claimed_By", "Tax", "Tip", "Total_Receipt_Amount"])
     for r in st.session_state.receipts:
@@ -237,15 +209,12 @@ with col2:
             claimers = ", ".join(r['claims'][item['id']]) if r['claims'][item['id']] else "None"
             writer1.writerow([r['id'], r['receipt_name'], r['status'].upper(), r['payer'], item['name'], f"${item['price']:.2f}", claimers, f"${r['tax']:.2f}", f"${r['tip']:.2f}", f"${r['total']:.2f}"])
             
-    # 生成 CSV: Debts 包含 Pending 和 Paid 状态
     writer2 = csv.writer(debts_csv)
     writer2.writerow(["Debtor", "Creditor", "Amount", "Status"])
-    # 写入尚未付清的 Pending 债务
     for debtor in st.session_state.users:
         for creditor in st.session_state.users:
             if net_owes[debtor][creditor] > 0.01:
                 writer2.writerow([debtor, creditor, f"${net_owes[debtor][creditor]:.2f}", "PENDING"])
-    # 写入已经打勾标记 Paid 的债务记录
     for s in st.session_state.settlements:
         writer2.writerow([s['debtor'], s['creditor'], f"${s['amount']:.2f}", "PAID"])
 
@@ -255,9 +224,6 @@ with col2:
     with d_col2:
         st.download_button(label="📥 Export Settlement Ledger", data=debts_csv.getvalue(), file_name="settlement_debts.csv", mime="text/csv", use_container_width=True)
 
-# ==========================================
-# 5. 后台实时保存到本地文件 (Real-time Save)
-# ==========================================
 try:
     with open("flatharmony_receipts.csv", "w", newline="", encoding="utf-8") as f_receipts:
         f_receipts.write(receipts_csv.getvalue())
